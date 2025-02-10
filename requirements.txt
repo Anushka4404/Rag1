@@ -33,3 +33,7 @@ openai
 unstructured
 beautifulsoup4
 python-dotenv
+streamlit
+langchain_community
+python-dotenv
+pysqlite3-binary
