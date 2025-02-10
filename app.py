@@ -5,6 +5,8 @@ from langchain_core.prompts import PromptTemplate
 from langchain.chains import RetrievalQA
 from langchain_community.vectorstores import Chroma
 from langchain_groq import ChatGroq
+from chromadb.config import Settings  # ✅ Ensure DuckDB is used
+
 from src.helper import (
     download_huggingface_embedding,
     load_data_from_uploaded_pdf,
@@ -17,11 +19,12 @@ def main():
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     embeddings = download_huggingface_embedding()
 
-    # ✅ Use DuckDB instead of SQLite
-    CHROMA_DB_SETTINGS = {"chroma_db_impl": "duckdb"}  # ✅ Fix SQLite issue
+    # ✅ Explicitly configure ChromaDB to use DuckDB instead of SQLite
+    CHROMA_SETTINGS = Settings(
+        chroma_db_impl="duckdb",  # ✅ Forces DuckDB instead of SQLite
+        persist_directory="/tmp/chroma_db",  # ✅ Ensures storage is inside /tmp/
+    )
 
-    # ✅ Store ChromaDB in /tmp/ (Streamlit Cloud has limited storage)
-    CHROMA_DEFAULT_DB = "/tmp/chroma_db"
     CHROMA_PDF_DB = "/tmp/chroma_db_pdf"
     CHROMA_URL_DB = "/tmp/chroma_db_url"
 
@@ -62,7 +65,7 @@ def main():
             embedding=embeddings,
             collection_name="PDF_database",
             persist_directory=CHROMA_PDF_DB,
-            client_settings=CHROMA_DB_SETTINGS,  # ✅ Use DuckDB instead of SQLite
+            client_settings=CHROMA_SETTINGS,  # ✅ Forces DuckDB instead of SQLite
         )
         st.success("Index loaded successfully")
 
@@ -75,7 +78,7 @@ def main():
             embedding=embeddings,
             collection_name="URL_database",
             persist_directory=CHROMA_URL_DB,
-            client_settings=CHROMA_DB_SETTINGS,  # ✅ Use DuckDB instead of SQLite
+            client_settings=CHROMA_SETTINGS,  # ✅ Forces DuckDB instead of SQLite
         )
         st.success("Index loaded successfully")
 
@@ -83,10 +86,10 @@ def main():
         st.success("Using Medical Book")
         try:
             docsearch = Chroma(
-                persist_directory=CHROMA_DEFAULT_DB,
+                persist_directory="/tmp/chroma_db",
                 embedding_function=embeddings,
                 collection_name="medical_chatbot",
-                client_settings=CHROMA_DB_SETTINGS,  # ✅ Use DuckDB instead of SQLite
+                client_settings=CHROMA_SETTINGS,  # ✅ Forces DuckDB instead of SQLite
             )
             st.success("Index loaded successfully!")
         except Exception as e:
