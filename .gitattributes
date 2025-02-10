@@ -1,0 +1,7 @@
+*.pdf filter=lfs diff=lfs merge=lfs -text
+*.zip filter=lfs diff=lfs merge=lfs -text
+*.bin filter=lfs diff=lfs merge=lfs -text
+*.sqlite3 filter=lfs diff=lfs merge=lfs -text
+chroma_db.zip filter=lfs diff=lfs merge=lfs -text
+chroma_db/73c0422d-d2b0-407d-9ec3-5e4540106258/data_level0.bin filter=lfs diff=lfs merge=lfs -text
+chroma_db/chroma.sqlite3 filter=lfs diff=lfs merge=lfs -text
