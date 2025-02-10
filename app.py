@@ -1,6 +1,5 @@
 import streamlit as st
 import os
-import sqlite3  # Ensure SQLite3 is imported
 from dotenv import load_dotenv
 from langchain_core.prompts import PromptTemplate
 from langchain.chains import RetrievalQA
@@ -13,15 +12,13 @@ from src.helper import (
     text_split,
 )
 
-# ✅ Ensure Streamlit uses updated SQLite version
-os.environ["PYTHONHOME"] = "/home/appuser/venv"
-os.environ["LD_LIBRARY_PATH"] = "/home/appuser/venv/lib"
-print("SQLite version:", sqlite3.sqlite_version)  # Debugging output
-
 def main():
     load_dotenv()
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     embeddings = download_huggingface_embedding()
+
+    # ✅ Use DuckDB instead of SQLite
+    CHROMA_DB_SETTINGS = {"chroma_db_impl": "duckdb"}  # ✅ Fix SQLite issue
 
     # ✅ Store ChromaDB in /tmp/ (Streamlit Cloud has limited storage)
     CHROMA_DEFAULT_DB = "/tmp/chroma_db"
@@ -65,6 +62,7 @@ def main():
             embedding=embeddings,
             collection_name="PDF_database",
             persist_directory=CHROMA_PDF_DB,
+            client_settings=CHROMA_DB_SETTINGS,  # ✅ Use DuckDB instead of SQLite
         )
         st.success("Index loaded successfully")
 
@@ -77,6 +75,7 @@ def main():
             embedding=embeddings,
             collection_name="URL_database",
             persist_directory=CHROMA_URL_DB,
+            client_settings=CHROMA_DB_SETTINGS,  # ✅ Use DuckDB instead of SQLite
         )
         st.success("Index loaded successfully")
 
@@ -87,6 +86,7 @@ def main():
                 persist_directory=CHROMA_DEFAULT_DB,
                 embedding_function=embeddings,
                 collection_name="medical_chatbot",
+                client_settings=CHROMA_DB_SETTINGS,  # ✅ Use DuckDB instead of SQLite
             )
             st.success("Index loaded successfully!")
         except Exception as e:
