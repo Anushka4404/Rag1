@@ -1,14 +1,11 @@
 import streamlit as st
 import os
-from langchain_pinecone import PineconeVectorStore
-from langchain.vectorstores import Pinecone
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+import sqlite3  # Ensure SQLite3 is imported
 from dotenv import load_dotenv
-from langchain_groq import ChatGroq
-from src.helper import download_huggingface_embedding, load_data, load_data_from_uploaded_pdf, load_data_from_url, text_split
+from langchain_core.prompts import PromptTemplate
+from langchain.chains import RetrievalQA
 from langchain_community.vectorstores import Chroma
+from langchain_groq import ChatGroq
 from src.helper import (
     download_huggingface_embedding,
     load_data_from_uploaded_pdf,
@@ -16,98 +13,85 @@ from src.helper import (
     text_split,
 )
 
-# Load environment variables
-load_dotenv()
-
-# Set API Key for LLM
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-
-# Set up embedding function
-embeddings = download_huggingface_embedding()
-
-# Define persistent storage for ChromaDB in Streamlit Cloud
-PERSIST_DIR_DEFAULT = "/tmp/chroma_db"
-PERSIST_DIR_PDF = "/tmp/chroma_db_PDF"
-PERSIST_DIR_URL = "/tmp/chroma_db_URL"
-
-# Ensure directories exist
-os.makedirs(PERSIST_DIR_DEFAULT, exist_ok=True)
-os.makedirs(PERSIST_DIR_PDF, exist_ok=True)
-os.makedirs(PERSIST_DIR_URL, exist_ok=True)
+# ✅ Ensure Streamlit uses updated SQLite version
+os.environ["PYTHONHOME"] = "/home/appuser/venv"
+os.environ["LD_LIBRARY_PATH"] = "/home/appuser/venv/lib"
+print("SQLite version:", sqlite3.sqlite_version)  # Debugging output
 
 def main():
-    # Streamlit Page Config
-    st.set_page_config(page_title="Medical-bot", page_icon="🩺", layout="wide")
+    load_dotenv()
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+    embeddings = download_huggingface_embedding()
 
-    # Sidebar for input selection
-    st.sidebar.title("Select Input Type")
-    input_type = st.sidebar.radio("Choose an option:", ["Default", "URL", "PDF"], index=0)
+    # ✅ Store ChromaDB in /tmp/ (Streamlit Cloud has limited storage)
+    CHROMA_DEFAULT_DB = "/tmp/chroma_db"
+    CHROMA_PDF_DB = "/tmp/chroma_db_pdf"
+    CHROMA_URL_DB = "/tmp/chroma_db_url"
 
-    uploaded_file = None
-    url = ""
+    st.set_page_config(page_title="Medical-bot", page_icon="H", layout="wide")
 
-    if input_type == "PDF":
-        uploaded_file = st.sidebar.file_uploader("Upload a PDF file", type=["pdf"])
-    elif input_type == "URL":
-        url = st.sidebar.text_input("Enter a URL")
+    col1, col2 = st.columns([1, 3])  # Sidebar for input selection
 
-    # Title & User Input
-    st.title("Healthcare Chatbot")
-    question_input = st.text_input("Type your Question Here", "")
+    with col1:
+        st.sidebar.title("Select Input Type")
+        input_type = st.sidebar.radio("Choose an option:", ["Default", "URL", "PDF"], index=0)
 
-    # Initialize document search
+        uploaded_file = None
+        url = ""
+
+        if input_type == "PDF":
+            uploaded_file = st.sidebar.file_uploader("Upload a PDF file", type=["pdf"])
+        elif input_type == "URL":
+            url = st.sidebar.text_input("Enter a URL")
+
+    with col2:
+        st.title("Healthcare Chatbot")
+        question_input = st.text_input("Type your Question Here", "")
+
+    # Initialize docsearch
     docsearch = None
 
     if input_type == "PDF" and uploaded_file:
         st.success(f"Processing PDF: {uploaded_file.name}")
-        pdf_path = "/tmp/uploaded_file.pdf"
-
-        # Save uploaded file
+        pdf_path = "/tmp/uploaded_file.pdf"  # ✅ Store uploaded files in /tmp/
+        
         with open(pdf_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
-        # Process PDF
         docs = load_data_from_uploaded_pdf(pdf_path)
         doc_chunks = text_split(docs)
-
-        # Create ChromaDB index
         docsearch = Chroma.from_documents(
             documents=doc_chunks,
             embedding=embeddings,
             collection_name="PDF_database",
-            persist_directory=PERSIST_DIR_PDF,
+            persist_directory=CHROMA_PDF_DB,
         )
         st.success("Index loaded successfully")
 
     elif input_type == "URL" and url:
         st.success(f"Processing URL: {url}")
-
-        # Fetch data from URL
         docs = load_data_from_url(url=url)
         doc_chunks = text_split(docs)
-
-        # Create ChromaDB index
         docsearch = Chroma.from_documents(
             documents=doc_chunks,
             embedding=embeddings,
             collection_name="URL_database",
-            persist_directory=PERSIST_DIR_URL,
+            persist_directory=CHROMA_URL_DB,
         )
         st.success("Index loaded successfully")
 
     elif input_type == "Default":
-        st.success("Using Default Medical Data")
+        st.success("Using Medical Book")
         try:
             docsearch = Chroma(
-                persist_directory=PERSIST_DIR_DEFAULT,
-                collection_name="default_database",
+                persist_directory=CHROMA_DEFAULT_DB,
                 embedding_function=embeddings,
+                collection_name="medical_chatbot",
             )
-            st.success("Default ChromaDB Index loaded!")
+            st.success("Index loaded successfully!")
         except Exception as e:
             st.error(f"Error loading default index: {e}")
 
-    # Run LLM-based QA if docsearch is ready
     if docsearch is not None:
         prompt_template = """
         Use the given information context to provide an appropriate answer for the user's question.
@@ -119,8 +103,8 @@ def main():
         """
 
         PROMPT = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
+        chain_type_kwargs = {"prompt": PROMPT}
 
-        # Initialize LLM
         llm = ChatGroq(
             api_key=GROQ_API_KEY,
             model="mixtral-8x7b-32768",
@@ -128,31 +112,25 @@ def main():
             max_tokens=1000,
             timeout=60,
         )
-
-        # Retrieval-based Q&A
         qa = RetrievalQA.from_chain_type(
             llm=llm,
             chain_type="stuff",
             retriever=docsearch.as_retriever(search_kwargs={"k": 4}),
             return_source_documents=True,
-            chain_type_kwargs={"prompt": PROMPT},
+            chain_type_kwargs=chain_type_kwargs,
         )
 
-        # Manage chat history
         if "chat_history" not in st.session_state:
             st.session_state["chat_history"] = []
 
-        # Process user question
         if question_input:
             result = qa.invoke(question_input)
             response = result["result"]
             st.session_state["chat_history"].append((question_input, response))
 
-        # Display chat history
         for question, answer in st.session_state["chat_history"]:
             st.write(f"**Q:** {question}")
             st.write(f"**A:** {answer}")
-
     else:
         st.error("No document search index available. Please select an option to proceed.")
 
