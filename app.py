@@ -5,7 +5,7 @@ from langchain_core.prompts import PromptTemplate
 from langchain.chains import RetrievalQA
 from langchain_community.vectorstores import Chroma
 from langchain_groq import ChatGroq
-from chromadb.config import Settings  # ✅ Ensure DuckDB is used
+from chromadb.config import Settings  
 
 from src.helper import (
     download_huggingface_embedding,
@@ -17,12 +17,17 @@ from src.helper import (
 def main():
     load_dotenv()
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
+    if not GROQ_API_KEY:
+        st.error("Missing API Key: Please set the GROQ_API_KEY in your environment.")
+        return
+
     embeddings = download_huggingface_embedding()
 
-    # ✅ Explicitly configure ChromaDB to use DuckDB instead of SQLite
+    # ✅ Updated ChromaDB settings
     CHROMA_SETTINGS = Settings(
-        chroma_db_impl="duckdb",  # ✅ Forces DuckDB instead of SQLite
-        persist_directory="/tmp/chroma_db",  # ✅ Ensures storage is inside /tmp/
+        anonymized_telemetry=False,  # ✅ Disable telemetry (avoids cloud-related failures)
+        persist_directory="/tmp/chroma_db",  # ✅ Streamlit-safe storage
     )
 
     CHROMA_PDF_DB = "/tmp/chroma_db_pdf"
@@ -30,7 +35,7 @@ def main():
 
     st.set_page_config(page_title="Medical-bot", page_icon="H", layout="wide")
 
-    col1, col2 = st.columns([1, 3])  # Sidebar for input selection
+    col1, col2 = st.columns([1, 3])
 
     with col1:
         st.sidebar.title("Select Input Type")
@@ -48,54 +53,54 @@ def main():
         st.title("Healthcare Chatbot")
         question_input = st.text_input("Type your Question Here", "")
 
-    # Initialize docsearch
     docsearch = None
 
-    if input_type == "PDF" and uploaded_file:
-        st.success(f"Processing PDF: {uploaded_file.name}")
-        pdf_path = "/tmp/uploaded_file.pdf"  # ✅ Store uploaded files in /tmp/
-        
-        with open(pdf_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
+    try:
+        if input_type == "PDF" and uploaded_file:
+            st.success(f"Processing PDF: {uploaded_file.name}")
+            pdf_path = "/tmp/uploaded_file.pdf"  
 
-        docs = load_data_from_uploaded_pdf(pdf_path)
-        doc_chunks = text_split(docs)
-        docsearch = Chroma.from_documents(
-            documents=doc_chunks,
-            embedding=embeddings,
-            collection_name="PDF_database",
-            persist_directory=CHROMA_PDF_DB,
-            client_settings=CHROMA_SETTINGS,  # ✅ Forces DuckDB instead of SQLite
-        )
-        st.success("Index loaded successfully")
+            with open(pdf_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
 
-    elif input_type == "URL" and url:
-        st.success(f"Processing URL: {url}")
-        docs = load_data_from_url(url=url)
-        doc_chunks = text_split(docs)
-        docsearch = Chroma.from_documents(
-            documents=doc_chunks,
-            embedding=embeddings,
-            collection_name="URL_database",
-            persist_directory=CHROMA_URL_DB,
-            client_settings=CHROMA_SETTINGS,  # ✅ Forces DuckDB instead of SQLite
-        )
-        st.success("Index loaded successfully")
+            docs = load_data_from_uploaded_pdf(pdf_path)
+            doc_chunks = text_split(docs)
+            docsearch = Chroma.from_documents(
+                documents=doc_chunks,
+                embedding=embeddings,
+                collection_name="PDF_database",
+                persist_directory=CHROMA_PDF_DB,
+                client_settings=CHROMA_SETTINGS,  
+            )
+            st.success("Index loaded successfully")
 
-    elif input_type == "Default":
-        st.success("Using Medical Book")
-        try:
+        elif input_type == "URL" and url:
+            st.success(f"Processing URL: {url}")
+            docs = load_data_from_url(url=url)
+            doc_chunks = text_split(docs)
+            docsearch = Chroma.from_documents(
+                documents=doc_chunks,
+                embedding=embeddings,
+                collection_name="URL_database",
+                persist_directory=CHROMA_URL_DB,
+                client_settings=CHROMA_SETTINGS,  
+            )
+            st.success("Index loaded successfully")
+
+        elif input_type == "Default":
+            st.success("Using Medical Book")
             docsearch = Chroma(
                 persist_directory="/tmp/chroma_db",
                 embedding_function=embeddings,
                 collection_name="medical_chatbot",
-                client_settings=CHROMA_SETTINGS,  # ✅ Forces DuckDB instead of SQLite
+                client_settings=CHROMA_SETTINGS,  
             )
             st.success("Index loaded successfully!")
-        except Exception as e:
-            st.error(f"Error loading default index: {e}")
 
-    if docsearch is not None:
+    except Exception as e:
+        st.error(f"Error initializing ChromaDB: {e}")
+
+    if docsearch:
         prompt_template = """
         Use the given information context to provide an appropriate answer for the user's question.
         If you don't know the answer, just say you don't know. Don't make up an answer.
