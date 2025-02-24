@@ -37,3 +37,7 @@ streamlit
 langchain_community
 python-dotenv
 pysqlite3-binary
+streamlit
+chromadb==0.4.14  # Use a stable version
+duckdb
+tiktoken
